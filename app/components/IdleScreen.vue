@@ -9,6 +9,8 @@
       <img src="/reminder-icons/pintor.png" alt="" />
       <img src="/reminder-icons/quebra-cabeca.png" alt="" />
       <img src="/reminder-icons/meninos-bola.png" alt="" />
+      <img src="/reminder-icons/livros.png" alt="" />
+      <img src="/reminder-icons/cozinhar.png" alt="" />
     </div>
 
     <button v-if="testMode" class="back-button" @click="$emit('back')">
@@ -52,7 +54,7 @@ const time = computed(() =>
   position: relative;
   z-index: 1;
   display: grid;
-  grid-template-columns: repeat(2, 90px);
+  grid-template-columns: repeat(3, 90px);
   grid-template-rows: repeat(2, 90px);
   gap: 16px;
 }
