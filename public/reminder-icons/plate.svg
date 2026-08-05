@@ -1,9 +1,13 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200">
-  <circle cx="100" cy="110" r="70" fill="#fff"/>
-  <circle cx="100" cy="110" r="48" fill="none" stroke="#FDBA74" stroke-width="6"/>
-  <rect x="30" y="30" width="10" height="70" rx="5" fill="#fff"/>
-  <rect x="20" y="30" width="8" height="35" rx="4" fill="#fff"/>
-  <rect x="32" y="30" width="8" height="35" rx="4" fill="#fff"/>
-  <rect x="44" y="30" width="8" height="35" rx="4" fill="#fff"/>
-  <path d="M160 30 v40 a10 10 0 0 1 -8 10 v50 a6 6 0 0 1 -12 0 v-50 a10 10 0 0 1 -8 -10 v-40 z" fill="#fff"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 220 220">
+  <ellipse cx="110" cy="205" rx="70" ry="8" fill="#0F172A" opacity="0.1"></ellipse>
+  <circle cx="110" cy="110" r="95" fill="#FFFFFF"></circle>
+  <circle cx="110" cy="110" r="95" fill="none" stroke="#E2E8F0" stroke-width="4"></circle>
+  <circle cx="110" cy="110" r="66" fill="none" stroke="#F1F5F9" stroke-width="10"></circle>
+  <g fill="#94A3B8">
+    <rect x="52" y="40" width="8" height="60" rx="4"></rect>
+    <rect x="66" y="40" width="8" height="60" rx="4"></rect>
+    <rect x="80" y="40" width="8" height="60" rx="4"></rect>
+    <path d="M52 100 C52 112, 60 118, 66 122 L66 178 C66 184, 76 184, 76 178 L76 122 C82 118, 90 112, 90 100 Z"></path>
+  </g>
+  <path d="M158 40 C170 46, 176 60, 172 76 C169 88, 160 96, 150 100 L150 178 C150 184, 140 184, 140 178 L140 40 Z" fill="#94A3B8"></path>
 </svg>

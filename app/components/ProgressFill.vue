@@ -10,6 +10,8 @@ defineProps<{ progress: number }>()
 
 <style scoped>
 .progress-track {
+  position: relative;
+  z-index: 1;
   width: min(80vw, 500px);
   height: 22px;
   border-radius: 11px;

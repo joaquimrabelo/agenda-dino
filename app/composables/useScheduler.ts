@@ -1,4 +1,4 @@
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import {
   BLACKOUT_WINDOW,
   RECURRING_STOP_TIME,
@@ -32,6 +32,13 @@ const started = ref(false)
 const referenceTime = ref<Date | null>(null)
 const now = ref(new Date())
 
+// If Hidratação and Banheiro occurrences land at (or within) this many minutes of each
+// other, an Intervalo fires instead of the individual reminders, and the reference time
+// resets to now (as if Play had just been pressed again).
+const COINCIDENCE_WINDOW_MINUTES = 10
+let lastCoincidenceKey: string | null = null
+let coincidenceWatcherInitialized = false
+
 export function useScheduler() {
   let timer: ReturnType<typeof setInterval> | undefined
 
@@ -59,6 +66,56 @@ export function useScheduler() {
     }
     return referenceTime.value
   })
+
+  // When Hidratação and Banheiro occurrences land at the same moment or within
+  // COINCIDENCE_WINDOW_MINUTES of each other, an Intervalo fires instead of them.
+  const coincidence = computed(() => {
+    if (!effectiveReference.value) return null
+
+    const hidratacao = recurringReminders.find(r => r.id === 'hidratacao')
+    const banheiro = recurringReminders.find(r => r.id === 'banheiro')
+    const intervalo = recurringReminders.find(r => r.id === 'intervalo')
+    if (!hidratacao || !banheiro || !intervalo) return null
+
+    const current = now.value
+    const elapsedMs = current.getTime() - effectiveReference.value.getTime()
+    if (elapsedMs < 0) return null
+
+    const hidIntervalMs = hidratacao.intervalMinutes * 60 * 1000
+    const banIntervalMs = banheiro.intervalMinutes * 60 * 1000
+
+    const hidOccurrence = Math.floor(elapsedMs / hidIntervalMs) * hidIntervalMs
+    const banOccurrence = Math.floor(elapsedMs / banIntervalMs) * banIntervalMs
+
+    const hidActive =
+      elapsedMs >= hidIntervalMs &&
+      current.getTime() < effectiveReference.value.getTime() + hidOccurrence + hidratacao.durationSeconds * 1000
+    const banActive =
+      elapsedMs >= banIntervalMs &&
+      current.getTime() < effectiveReference.value.getTime() + banOccurrence + banheiro.durationSeconds * 1000
+
+    if (!hidActive && !banActive) return null
+
+    const diffMs = Math.abs(hidOccurrence - banOccurrence)
+    if (diffMs > COINCIDENCE_WINDOW_MINUTES * 60 * 1000) return null
+
+    const occurrenceStart = effectiveReference.value.getTime() + Math.min(hidOccurrence, banOccurrence)
+    return {
+      reminder: intervalo,
+      occurrenceStart,
+      key: `${hidOccurrence}-${banOccurrence}`
+    }
+  })
+
+  if (!coincidenceWatcherInitialized) {
+    coincidenceWatcherInitialized = true
+    watch(coincidence, val => {
+      if (val && val.key !== lastCoincidenceKey) {
+        lastCoincidenceKey = val.key
+        referenceTime.value = new Date()
+      }
+    })
+  }
 
   const active = computed<ActiveReminder>(() => {
     if (!started.value || !effectiveReference.value) {
@@ -99,42 +156,34 @@ export function useScheduler() {
       return { kind: 'idle' }
     }
 
-    const intervalo = recurringReminders.find(r => r.id === 'intervalo')!
-    const hidratacao = recurringReminders.find(r => r.id === 'hidratacao')!
-
-    const intervaloIntervalMs = intervalo.intervalMinutes * 60 * 1000
-    const hidratacaoIntervalMs = hidratacao.intervalMinutes * 60 * 1000
-
-    const intervaloOccurrence = Math.floor(elapsedMs / intervaloIntervalMs) * intervaloIntervalMs
-    const hidratacaoOccurrence = Math.floor(elapsedMs / hidratacaoIntervalMs) * hidratacaoIntervalMs
-
-    const intervaloActive =
-      elapsedMs >= intervaloIntervalMs &&
-      current.getTime() < effectiveReference.value.getTime() + intervaloOccurrence + intervalo.durationSeconds * 1000
-
-    const hidratacaoActive =
-      elapsedMs >= hidratacaoIntervalMs &&
-      current.getTime() < effectiveReference.value.getTime() + hidratacaoOccurrence + hidratacao.durationSeconds * 1000
-
-    if (intervaloActive) {
-      const occurrenceStart = effectiveReference.value.getTime() + intervaloOccurrence
+    // Hidratação/Banheiro coincidence overrides both with an Intervalo.
+    if (coincidence.value) {
+      const { reminder, occurrenceStart } = coincidence.value
       const elapsedInOccurrence = current.getTime() - occurrenceStart
       return {
         kind: 'recurring',
-        reminder: intervalo,
-        progress: Math.min(1, elapsedInOccurrence / (intervalo.durationSeconds * 1000)),
+        reminder,
+        progress: Math.min(1, elapsedInOccurrence / (reminder.durationSeconds * 1000)),
         occurrenceStart
       }
     }
 
-    if (hidratacaoActive) {
-      const occurrenceStart = effectiveReference.value.getTime() + hidratacaoOccurrence
-      const elapsedInOccurrence = current.getTime() - occurrenceStart
-      return {
-        kind: 'recurring',
-        reminder: hidratacao,
-        progress: Math.min(1, elapsedInOccurrence / (hidratacao.durationSeconds * 1000)),
-        occurrenceStart
+    // Array order in `recurringReminders` sets priority: earlier entries win when occurrences coincide.
+    for (const reminder of recurringReminders) {
+      const intervalMs = reminder.intervalMinutes * 60 * 1000
+      const occurrence = Math.floor(elapsedMs / intervalMs) * intervalMs
+      const occurrenceStart = effectiveReference.value.getTime() + occurrence
+      const active =
+        elapsedMs >= intervalMs && current.getTime() < occurrenceStart + reminder.durationSeconds * 1000
+
+      if (active) {
+        const elapsedInOccurrence = current.getTime() - occurrenceStart
+        return {
+          kind: 'recurring',
+          reminder,
+          progress: Math.min(1, elapsedInOccurrence / (reminder.durationSeconds * 1000)),
+          occurrenceStart
+        }
       }
     }
 
