@@ -2,7 +2,7 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import {
   BLACKOUT_WINDOW,
   RECURRING_STOP_TIME,
-  RESET_TIME,
+  RESET_CHECKPOINTS,
   fixedReminders,
   recurringReminders,
   type FixedReminder,
@@ -118,14 +118,14 @@ export function useScheduler() {
     referenceTime.value = currentNow()
   }
 
-  // Reset R to 14:00 exactly once, only if R is still earlier than 14:00.
+  // Snap R forward to each checkpoint (in order) that R hasn't reached yet once its clock
+  // time arrives — e.g. Play pressed at 07:00 snaps R to 08:00, then to 13:30.
   const effectiveReference = computed<Date | null>(() => {
     if (!referenceTime.value) return null
-    const resetAt = todayAt(RESET_TIME, now.value)
-    if (now.value >= resetAt && referenceTime.value < resetAt) {
-      return resetAt
-    }
-    return referenceTime.value
+    return RESET_CHECKPOINTS.reduce((ref, checkpoint) => {
+      const resetAt = todayAt(checkpoint, now.value)
+      return now.value >= resetAt && ref < resetAt ? resetAt : ref
+    }, referenceTime.value)
   })
 
   const active = computed<ActiveReminder>(() => {

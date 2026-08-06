@@ -20,12 +20,12 @@ The Nuxt 3 app is implemented and live under `app/`. There is no separate spec d
 The most important — and most error-prone — part of this app is the reminder scheduling logic in `app/composables/useScheduler.ts` (the `active` computed). Any change touching timing must preserve this exact priority order, evaluated on every clock tick:
 
 1. Routine not started → Play screen
-2. Current time falls in a **fixed reminder** window (`app/data/reminders.ts` → `fixedReminders`: Almoço, Soneca, Lanche, Banho, Jantar, Dormir — fixed by wall-clock time, independent of when Play was pressed) → show that reminder
+2. Current time falls in a **fixed reminder** window (`app/data/reminders.ts` → `fixedReminders`: Café da manhã, Almoço, Soneca, Lanche, Banho, Jantar, Dormir — fixed by wall-clock time, independent of when Play was pressed) → show that reminder
 3. Current time is in the **blackout window** (11:30–14:00) or after **18:00** (`RECURRING_STOP_TIME`) → Idle
 4. Otherwise, compute **recurring reminders** (`recurringReminders`: Hidratação every 40min, Banheiro every 60min, Intervalo every 120min) from reference time `R` — array order sets priority when occurrences coincide
 
 Key rules that are easy to get wrong:
-- `R` (reference time) is set when Play is pressed. At 13:30 (`RESET_TIME`), if `R` is still before 13:30, it is reset to 13:30 — but only once, and only if it hasn't already passed that time.
+- `R` (reference time) is set when Play is pressed. It snaps forward to each checkpoint in `RESET_CHECKPOINTS` (`app/data/reminders.ts`, currently `08:00` then `13:30`) in chronological order, the moment that checkpoint's clock time arrives, but only if `R` hasn't already reached it — e.g. Play at 07:00 snaps `R` to 08:00, then again to 13:30. Play pressed after a checkpoint leaves `R` untouched at that checkpoint.
 - Recurring reminders never fire during the 11:30–14:00 blackout, and stop permanently after 18:00 (`recurringStopped` is checked explicitly, not just as a side effect of fixed-reminder priority).
 - Recurring occurrence math is derived from elapsed time since `R` (`floor(elapsed / interval) * interval`) per reminder, not from ticking counters, so it stays correct regardless of tick frequency.
 - `intervalo`'s 120min interval is the LCM of `hidratacao`'s 40min and `banheiro`'s 60min, so all three naturally realign every 2h from `R`. Because `intervalo` is listed **first** in `recurringReminders`, the priority loop returns it on that tick and implicitly covers/suppresses the other two — no extra coincidence detection or `R`-mutation is needed. (An earlier version tried to detect this coincidence separately and reset `R` as a side effect; that reset happened within the same reactive tick the coincidence was computed, immediately zeroing elapsed time and cancelling the very state it had just set — so Intervalo never rendered. Don't reintroduce that pattern.)

@@ -34,6 +34,7 @@ export interface FixedReminder {
 }
 
 export const fixedReminders: FixedReminder[] = [
+  { id: 'cafe-da-manha', label: 'Café da manhã', icon: '/reminder-icons/cafe.webp', color: '#F97316', start: '07:00', end: '08:00' },
   { id: 'almoco', label: 'Almoço', icon: '/reminder-icons/plate.svg', color: '#F97316', start: '11:20', end: '12:00' },
   { id: 'soneca', label: 'Soneca', icon: '/reminder-icons/bed.svg', color: '#A855F7', start: '12:00', end: '13:30' },
   { id: 'lanche', label: 'Lanche', icon: '/reminder-icons/cesto-frutas.png', color: '#EAB308', start: '15:30', end: '15:50' },
@@ -42,6 +43,8 @@ export const fixedReminders: FixedReminder[] = [
   { id: 'dormir', label: 'Dormir', icon: '/reminder-icons/bed.svg', color: '#A855F7', start: '19:30', end: null }
 ]
 
-export const RESET_TIME = '13:30'
+// R (Play reference time) checkpoints: if R is still earlier than a checkpoint when that
+// checkpoint's clock time arrives, R snaps forward to it — once, in chronological order.
+export const RESET_CHECKPOINTS = ['08:00', '13:30']
 export const BLACKOUT_WINDOW = { start: '11:30', end: '14:00' }
 export const RECURRING_STOP_TIME = '18:00'
