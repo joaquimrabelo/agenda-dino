@@ -1,4 +1,4 @@
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import {
   BLACKOUT_WINDOW,
   RECURRING_STOP_TIME,
@@ -32,19 +32,80 @@ const started = ref(false)
 const referenceTime = ref<Date | null>(null)
 const now = ref(new Date())
 
-// If Hidratação and Banheiro occurrences land at (or within) this many minutes of each
-// other, an Intervalo fires instead of the individual reminders, and the reference time
-// resets to now (as if Play had just been pressed again).
-const COINCIDENCE_WINDOW_MINUTES = 10
-let lastCoincidenceKey: string | null = null
-let coincidenceWatcherInitialized = false
+// Dev-only clock offset (ms) so the app clock can be fast-forwarded from the
+// console without touching the system clock. Applied on top of Date.now().
+const timeOffsetMs = ref(0)
+
+function currentNow() {
+  return new Date(Date.now() + timeOffsetMs.value)
+}
+
+function setupDevTimeTravel() {
+  if (!import.meta.dev || typeof window === 'undefined') return
+  const w = window as any
+  if (w.__dino) return // already installed
+
+  w.__dino = {
+    // Jump the clock to a given HH:mm today (e.g. __dino.setTime('11:29'))
+    setTime(hm: string) {
+      const [h, m] = hm.split(':').map(Number)
+      const target = new Date()
+      target.setHours(h, m, 0, 0)
+      timeOffsetMs.value = target.getTime() - Date.now()
+      now.value = currentNow()
+      console.log(`[dino] clock set to ${hm} ->`, now.value.toLocaleTimeString())
+    },
+    // Fast-forward (or rewind with a negative value) by N minutes
+    addMinutes(n: number) {
+      timeOffsetMs.value += n * 60 * 1000
+      now.value = currentNow()
+      console.log(`[dino] clock advanced ${n}min ->`, now.value.toLocaleTimeString())
+    },
+    // Back to the real system clock
+    resetTime() {
+      timeOffsetMs.value = 0
+      now.value = currentNow()
+      console.log('[dino] clock reset to system time ->', now.value.toLocaleTimeString())
+    },
+    // Inspect current simulated time
+    now() {
+      console.log('[dino] simulated time:', currentNow().toLocaleTimeString())
+      return currentNow()
+    },
+    // Start the routine (as if Play was pressed), optionally backdating R to HH:mm
+    play(hm?: string) {
+      started.value = true
+      if (hm) {
+        const [h, m] = hm.split(':').map(Number)
+        const target = new Date(currentNow())
+        target.setHours(h, m, 0, 0)
+        referenceTime.value = target
+      } else {
+        referenceTime.value = currentNow()
+      }
+      console.log('[dino] play pressed, R =', referenceTime.value?.toLocaleTimeString())
+    },
+    // Change R (the Play reference time) without touching started/current clock
+    setPlayTime(hm: string) {
+      const [h, m] = hm.split(':').map(Number)
+      const target = new Date(currentNow())
+      target.setHours(h, m, 0, 0)
+      referenceTime.value = target
+      console.log('[dino] R set to', referenceTime.value.toLocaleTimeString())
+    }
+  }
+  console.log(
+    '[dino] time travel enabled: __dino.setTime("HH:mm"), __dino.addMinutes(n), __dino.resetTime(), __dino.now(), __dino.play("HH:mm"?), __dino.setPlayTime("HH:mm")'
+  )
+}
 
 export function useScheduler() {
   let timer: ReturnType<typeof setInterval> | undefined
 
   onMounted(() => {
+    setupDevTimeTravel()
     timer = setInterval(() => {
-      now.value = new Date()
+      now.value = currentNow()
     }, 1000)
   })
 
@@ -54,7 +115,7 @@ export function useScheduler() {
 
   function start() {
     started.value = true
-    referenceTime.value = new Date()
+    referenceTime.value = currentNow()
   }
 
   // Reset R to 14:00 exactly once, only if R is still earlier than 14:00.
@@ -66,56 +127,6 @@ export function useScheduler() {
     }
     return referenceTime.value
   })
-
-  // When Hidratação and Banheiro occurrences land at the same moment or within
-  // COINCIDENCE_WINDOW_MINUTES of each other, an Intervalo fires instead of them.
-  const coincidence = computed(() => {
-    if (!effectiveReference.value) return null
-
-    const hidratacao = recurringReminders.find(r => r.id === 'hidratacao')
-    const banheiro = recurringReminders.find(r => r.id === 'banheiro')
-    const intervalo = recurringReminders.find(r => r.id === 'intervalo')
-    if (!hidratacao || !banheiro || !intervalo) return null
-
-    const current = now.value
-    const elapsedMs = current.getTime() - effectiveReference.value.getTime()
-    if (elapsedMs < 0) return null
-
-    const hidIntervalMs = hidratacao.intervalMinutes * 60 * 1000
-    const banIntervalMs = banheiro.intervalMinutes * 60 * 1000
-
-    const hidOccurrence = Math.floor(elapsedMs / hidIntervalMs) * hidIntervalMs
-    const banOccurrence = Math.floor(elapsedMs / banIntervalMs) * banIntervalMs
-
-    const hidActive =
-      elapsedMs >= hidIntervalMs &&
-      current.getTime() < effectiveReference.value.getTime() + hidOccurrence + hidratacao.durationSeconds * 1000
-    const banActive =
-      elapsedMs >= banIntervalMs &&
-      current.getTime() < effectiveReference.value.getTime() + banOccurrence + banheiro.durationSeconds * 1000
-
-    if (!hidActive && !banActive) return null
-
-    const diffMs = Math.abs(hidOccurrence - banOccurrence)
-    if (diffMs > COINCIDENCE_WINDOW_MINUTES * 60 * 1000) return null
-
-    const occurrenceStart = effectiveReference.value.getTime() + Math.min(hidOccurrence, banOccurrence)
-    return {
-      reminder: intervalo,
-      occurrenceStart,
-      key: `${hidOccurrence}-${banOccurrence}`
-    }
-  })
-
-  if (!coincidenceWatcherInitialized) {
-    coincidenceWatcherInitialized = true
-    watch(coincidence, val => {
-      if (val && val.key !== lastCoincidenceKey) {
-        lastCoincidenceKey = val.key
-        referenceTime.value = new Date()
-      }
-    })
-  }
 
   const active = computed<ActiveReminder>(() => {
     if (!started.value || !effectiveReference.value) {
@@ -156,19 +167,9 @@ export function useScheduler() {
       return { kind: 'idle' }
     }
 
-    // Hidratação/Banheiro coincidence overrides both with an Intervalo.
-    if (coincidence.value) {
-      const { reminder, occurrenceStart } = coincidence.value
-      const elapsedInOccurrence = current.getTime() - occurrenceStart
-      return {
-        kind: 'recurring',
-        reminder,
-        progress: Math.min(1, elapsedInOccurrence / (reminder.durationSeconds * 1000)),
-        occurrenceStart
-      }
-    }
-
     // Array order in `recurringReminders` sets priority: earlier entries win when occurrences coincide.
+    // Intervalo's 120min interval is the LCM of Hidratação's 40min and Banheiro's 60min, so all three
+    // naturally realign every 2h from R — Intervalo (listed first) wins that tick and covers both.
     for (const reminder of recurringReminders) {
       const intervalMs = reminder.intervalMinutes * 60 * 1000
       const occurrence = Math.floor(elapsedMs / intervalMs) * intervalMs
